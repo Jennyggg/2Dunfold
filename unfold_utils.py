@@ -435,6 +435,19 @@ class HistData(HistMetaData):
         cls_list.append(asdict(cls(**full_dict)))
       return cls_list
 
+
+
+def set_bin(root_hist,ibin,weight,full_sel,do_bs=False):
+     if do_bs:
+         root_hist.SetBinContent(ibin, np.mean([np.sum(oneweight[full_sel]) for oneweight in weight]) )
+         root_hist.SetBinError(ibin, np.std([np.sum(oneweight[full_sel]) for oneweight in weight], ddof = 1 ))
+     else:
+         root_hist.SetBinContent(ibin, np.sum(weight[full_sel]) )
+         root_hist.SetBinError( ibin, np.sqrt(np.sum(np.square(weight[full_sel]))) )
+
+
+
+
 class HistList:
 
 
@@ -598,14 +611,18 @@ class HistList:
             weightarray = np.ones(len(obs_arrays['reco_ntrk']))
         if genWeight != '':
             if genWeight in obs_arrays.keys():
-                weight = weightarray * obs_arrays[genWeight]
+                if isinstance(weightarray,list):
+                    weight = [onearray * obs_arrays[genWeight] for onearray in weightarray]
+                else:
+                    weight = weightarray * obs_arrays[genWeight]
             else:
                 print(f'{genWeight} is not a key in {files} skip it')
                 weight = weightarray
         else:
             weight = weightarray
         filter_cut = filter_np_cut(obs_arrays, self.npy_cut)
-        inf_weight_mask = np.isinf(weight) != True
+
+        do_bs = isinstance(weight,list)
 
         for ihist, edge_i in enumerate(self.dim1.edges[:-1]):
             edge_ip1 = self.dim1.edges[ihist+1]
@@ -613,7 +630,7 @@ class HistList:
             bind1_high_cut = obs_arrays[self.dim1.np_var] < edge_ip1
 
             bd1_cut = bind1_low_cut & bind1_high_cut
-            d1_cut = filter_cut & inf_weight_mask & bd1_cut
+            d1_cut = filter_cut & bd1_cut
 
             for ibin in range(self.root_hists[ihist].GetNbinsX()):
                 bind2_low_cut = obs_arrays[self.dim2.np_var] >= self.dim2.edges[ihist][ibin]
@@ -622,28 +639,30 @@ class HistList:
 
                 full_sel = d1_cut & bd2_cut
 
-                self.root_hists[ihist].SetBinContent(ibin + 1, np.sum(weight[full_sel]) )
-                self.root_hists[ihist].SetBinError( ibin + 1, np.sqrt(np.sum(np.square(weight[full_sel]))) )
+                set_bin(self.root_hists[ihist], ibin+1, weight, full_sel, do_bs)
 
             d2_undfl_cut = obs_arrays[self.dim2.np_var] < self.dim2.edges[ihist][0]
             full_sel = d1_cut & d2_undfl_cut
 
-            self.root_hists[ihist].SetBinContent(0, np.sum(weight[full_sel]) )
-            self.root_hists[ihist].SetBinContent(0, np.sqrt(np.sum(np.square(weight[full_sel]))) )
+            set_bin(self.root_hists[ihist], 0, weight, full_sel, do_bs)
 
             d2_ovfl_cut = obs_arrays[self.dim2.np_var ] > self.dim2.edges[ihist][-1]
             full_sel = d1_cut & d2_ovfl_cut
 
-            self.root_hists[ihist].SetBinContent(self.root_hists[ihist].GetNbinsX() + 1, np.sum(weight[full_sel]) )
-            self.root_hists[ihist].SetBinError(self.root_hists[ihist].GetNbinsX() + 1, np.sqrt(np.sum(np.square(weight[full_sel]) )))
+            set_bin(self.root_hists[ihist], self.root_hists[ihist].GetNbinsX() + 1, weight, full_sel, do_bs)
 
             self.bin_sum.append(np.sum([ self.root_hists[ihist].GetBinContent(ibin + 1) for ibin in range(self.root_hists[ihist].GetNbinsX()) ]))
             self.bin_norm.append(np.sum([ self.root_hists[ihist].GetBinContent(ibin) for ibin in range(self.root_hists[ihist].GetNbinsX() + 2) ]))
 
-        self.dim1_underflow = np.sum(weight[inf_weight_mask & filter_cut & (obs_arrays[self.dim1.np_var] < self.dim1.edges[0])])
-        self.dim1_overflow = np.sum(weight[inf_weight_mask & filter_cut & (obs_arrays[self.dim1.np_var] >= self.dim1.edges[len(self.dim1.edges) - 1])])
+        if do_bs:
+            self.dim1_underflow = np.mean([np.sum(oneweight[ filter_cut & (obs_arrays[self.dim1.np_var] < self.dim1.edges[0])]) for oneweight in weight] )
+            self.dim1_overflow = np.mean([np.sum(oneweight[ filter_cut & (obs_arrays[self.dim1.np_var] >= self.dim1.edges[len(self.dim1.edges) - 1])]) for oneweight in weight] )
+            self.norm = np.mean([np.sum(oneweight[filter_cut]) for oneweight in weight] )
+        else:
+            self.dim1_underflow = np.sum(weight[ filter_cut & (obs_arrays[self.dim1.np_var] < self.dim1.edges[0])])
+            self.dim1_overflow = np.sum(weight[ filter_cut & (obs_arrays[self.dim1.np_var] >= self.dim1.edges[len(self.dim1.edges) - 1])])
+            self.norm = np.sum(weight[filter_cut])
         self.total = np.sum(self.bin_sum)
-        self.norm = np.sum(weight[inf_weight_mask & filter_cut])
         return
 
     def flatten_hist(self):

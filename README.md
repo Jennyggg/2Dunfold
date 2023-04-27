@@ -62,3 +62,8 @@ To run the 2D unfolding of nparticle versus spherocity
 python evaluate_iterations.py --config config/dataset_v7_MCEPOS_unfoldCP1_optimize_1p3M.json  --method multifold --migiter 0 1 2 10 20 --eff-acc --obs nparticle:nparticle_dim1_2D,spherocity
 python evaluate_chi2_iterations.py --input results_finebin_v7_MCEPOS_sysCP1_1d_1p3M_eff_acc_ensemble4/unfold_nparticle_spherocity_nominal_optimize_multifold.root --output results_finebin_v7_MCEPOS_sysCP1_1d_1p3M_eff_acc_ensemble4/iter_nparticle_spherocity_nominal_optimize_multifold.root --config config/plot_1d_v7_MCEPOS_unfoldCP1.json --plot --plotdir results_finebin_v7_MCEPOS_sysCP1_1d_1p3M_eff_acc_ensemble4/plots_multifold/ --obs nparticle:nparticle_dim1_2D,spherocity
 ```
+
+The test for unfoldin the ZeroBias data with systematic uncertainty:
+```
+bash run_1D_MCEPOS_unfolddata.sh
+```

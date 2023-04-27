@@ -12,8 +12,8 @@ import pandas as pd
 from GOF.binned import *
 import uproot
 import awkward as ak
-
-
+import subprocess
+from multiprocessing.pool import Pool
 
 def get_metadata_config(dataset,tag="",**dic_config):
   workflow = dic_config.pop("workflow")
@@ -53,6 +53,11 @@ def get_metadata_config(dataset,tag="",**dic_config):
   elif dataset == f"{gof}_unfold_data":
     datatype = f"{gof}_"+workflow+"_data"
     df_dataset = workflow+"_"+data_name
+  elif "sysbs" in dataset:
+    ibs = re.findall(r'\d+', dataset)[-1]
+    datatype = workflow+"_sysbs_"+ibs
+    print(datatype)
+    df_dataset = MC_name
   else:
     datatype = workflow
     df_dataset = MC_name
@@ -330,6 +335,14 @@ def load_var_from_np( events, cut, var_list, weight = None):
   return np.vstack(var_arrays), weight_array
 
 
+def files_in_path( path, sel):
+  ls_output = subprocess.getoutput("ls "+os.path.join(path,sel))
+  ls_output_list = ls_output.split('\n')
+  return ls_output_list
+
+
+
+
 
 def load_obs_array( events, from_root, obs_list, weight = None ):
   '''
@@ -361,6 +374,16 @@ def load_obs_array( events, from_root, obs_list, weight = None ):
     if len(gen_var_list)>0:
       obs_array.gen,obs_array.weight_gen = load_var_from_np(events,CutType.PassGen,gen_var_list,weight)
   return obs_array
+
+def histlist_dic_applyMCeff(histlist_dic,eff_from_nominal,gen_inveff):
+  if eff_from_nominal:
+    histlist_dic["gen_inclusive"].get_hist_from_multiplication(histlist_dic["gen_passreco"],gen_inveff)
+
+def histlist_dic_normalize_to_data(histlist_dic,normalization_histlist_dic):
+  norm_factor = normalization_histlist_dic.norm / histlist_dic["reco_inclusive"].norm
+  for key, hist in histlist_dic.items():
+    if not (key == 'mig' or key == "eff" or key == "acc"):
+      hist.multiply(norm_factor)
 
 
 
@@ -426,47 +449,52 @@ if __name__=="__main__":
     pseudodata_NPZ =  config["pseudodata"] and (isinstance(infile_pseudodata,list) or '.npz' in infile_pseudodata)
     #tree_data, tree_refdata = get_tree_data( config, pseudodata_NPZ)
 
-    tree_data = None
-    infile_data = get_input_file_from_config_info( config["inputfiledata"], obs2_name )
-    fin_refdata=ROOT.TFile(infile_data,"READ")
-    tree_refdata=fin_refdata.Get("ntuplizer/tree") if fin_refdata.Get("ntuplizer/tree") else fin_refdata.Get("tree")
-    if config["pseudodata"]:
-      if not pseudodata_NPZ:
-        fin_data=ROOT.TFile(infile_pseudodata,"READ")
-        tree_data = fin_data.Get("ntuplizer/tree") if  fin_data.Get("ntuplizer/tree") else  fin_data.Get("tree")
-    else:
-      tree_data = tree_refdata
+    infile_refdata = get_input_file_from_config_info( config["inputfiledata"], obs2_name )
+    data_NPZ = isinstance(infile_refdata,list) or '.npz' in infile_refdata
+    if data_NPZ:
+      events_refdata = infile_refdata
+    else: 
+      fin_refdata=ROOT.TFile(infile_refdata,"READ")
+      tree_refdata=fin_refdata.Get("ntuplizer/tree") if fin_refdata.Get("ntuplizer/tree") else fin_refdata.Get("tree")
 
     if config["pseudodata"]:
       weight_pseudodata = None
       if pseudodata_NPZ:
         if config.get("pseudodataweight",None) is not None:
-          file_weight_pseudodata=np.load(config["pseudodataweight"],allow_pickle=True)
+          file_weight_pseudodata=np.load(config["pseudodataweight"],allow_pickle=True) 
           weight_pseudodata=file_weight_pseudodata[-1]
-
-        event_data = infile_pseudodata
+        events_pseudodata = infile_pseudodata
         from_root = False
       else:
-        event_data = tree_data
+        fin_pseudodata=ROOT.TFile(infile_pseudodata,"READ")
+        events_pseudodata = fin_pseudodata.Get("ntuplizer/tree") if  fin_pseudodata.Get("ntuplizer/tree") else  fin_pseudodata.Get("tree")
         from_root = True
-      pseudo_hists = fill_hist_lists("Pseudodata", obs1, obs2, bin_edges_gen, bin_edges_reco, event_data, genWeight=weightname, from_root=from_root, weight_array=weight_pseudodata, store_mig=True,**df_config)
-      reco_data_tree = tree_refdata
+      pseudo_hists = fill_hist_lists("Pseudodata", obs1, obs2, bin_edges_gen, bin_edges_reco, events_pseudodata, genWeight=weightname, from_root=from_root, weight_array=weight_pseudodata, store_mig=True,**df_config)
       tag = "_Ref"
       chi2_mc_pseudo = Chi2Collections.from_source(mc_hists,pseudo_hists,"MC","pseudodata")
       pseudo_events,pseudo_from_root = load_events(infile_pseudodata)
       pseudo_obsarray = load_obs_array( pseudo_events, pseudo_from_root, [obs2], [weightname,weight_pseudodata] )
       ks_mc_pseudo = KSDistanceCollections.from_source(mc_obsarray, pseudo_obsarray, "MC","pseudodata")
-
       target_hists_tuple = ("pseudodata",pseudo_hists, pseudo_obsarray)
       chi2_mc_target = chi2_mc_pseudo
       ks_mc_target = ks_mc_pseudo
-
     else:
-      reco_data_tree = tree_data
       tag = ""
-    data_hists = fill_hist_lists("Data", obs1, obs2, None, bin_edges_reco, reco_data_tree, tag=tag, reco_only=True,**df_config)
+
+    weight_data = None
+    if config.get("dataweight",None) is not None:
+      file_weight_data=np.load(config["dataweight"],allow_pickle=True)
+      weight_data=file_weight_data[-1]
+    if data_NPZ:
+      reco_data_events = events_refdata
+      from_root = False
+    else:
+      reco_data_events = tree_refdata
+      from_root = True
+      
+    data_hists = fill_hist_lists("Data", obs1, obs2, None, bin_edges_reco, reco_data_events,from_root=from_root,weight_array=weight_data, tag=tag, reco_only=True,**df_config)
     chi2_mc_data = Chi2Collections.from_source(mc_hists,data_hists,"MC","data")
-    data_events,data_from_root = load_events(infile_data)
+    data_events,data_from_root = load_events(infile_refdata)
     data_obsarray = load_obs_array( data_events, data_from_root, [obs2])
     ks_mc_data = KSDistanceCollections.from_source(mc_obsarray, data_obsarray, "MC","data")
 
@@ -478,17 +506,25 @@ if __name__=="__main__":
 
 
     normalization_hist = pseudo_hists["reco_inclusive"] if config["pseudodata"] else data_hists["reco_inclusive"]
-    mc_norm_factor = normalization_hist.norm / mc_hists["reco_inclusive"].norm
-
-    for key, hist in mc_hists.items():
-        if not (key == 'mig' or key == "eff" or key == "acc"):
-            hist.multiply(mc_norm_factor)
+    histlist_dic_normalize_to_data(mc_hists,normalization_hist)
 
     if not os.path.exists(config[args.method]["weight"]):
       print("Cannot find weight file ",config[args.method]["weight"])
       exit(0)
 
     weights=np.load(config[args.method]["weight"],allow_pickle=True)
+    if config[args.method]["addsysbs"]:
+      #weights_sysbs = []
+      ibs_list = []
+      sysbs_name_list = files_in_path( config[args.method]['sysbsweightdir'], "*MCbs*npy")
+      for sysbs_name in sysbs_name_list:
+        ibs_list.append(re.findall(r'\d+', sysbs_name)[-1])
+      #  print(f"opening {sysbs_name}")
+      #  with open(sysbs_name,'rb') as sysbs_file:
+      #    weights_sysbs.append(np.load(sysbs_file,allow_pickle=True))
+
+
+
     weights_per_iter = 4 if args.eff_acc else 2
 
     step1_tag = "_step1" if args.step1 else ""
@@ -501,25 +537,58 @@ if __name__=="__main__":
     list_ks_distance_unfold_target = []
     for i in range(0,niter+1):
       offset = weights_per_iter // 2 if (args.step1 and i > 0 ) else 0
-      weight_iter = weights[weights_per_iter*i - offset ]
+      weight_index = weights_per_iter*i - offset
+      weight_iter = weights[weight_index ]
+
       store_mig = i in args.migiter
 
       unfold_hists = fill_hist_lists("MC_"+args.method, obs1, obs2, bin_edges_gen,bin_edges_reco,config[args.method]["sim"],genWeight=weightname,from_root=False,weight_array=weight_iter,store_mig=store_mig,tag="_iter"+str(i),**df_config)
       unfold_events,unfold_from_root = load_events(config[args.method]["sim"])
       unfold_obsarray = load_obs_array( unfold_events,unfold_from_root, [obs2], [weightname, weight_iter] )
-      if args.eff_from_nominal:
-        unfold_hists["gen_inclusive"].get_hist_from_multiplication(unfold_hists["gen_passreco"],gen_inveff)
-      unf_norm_factor = normalization_hist.norm / unfold_hists["reco_inclusive"].norm
+      histlist_dic_applyMCeff(unfold_hists,args.eff_from_nominal,gen_inveff)
 
-      for key, hist in unfold_hists.items():
-        if not (key == 'mig' or key == "eff" or key == "acc"):
-            hist.multiply(unf_norm_factor)
+      histlist_dic_normalize_to_data(unfold_hists,normalization_hist)
 
       list_chi2_unfold_target.append(Chi2Collections.from_source(unfold_hists,target_hists_tuple[1],"unfold",target_hists_tuple[0]))
       list_ks_distance_unfold_target.append(KSDistanceCollections.from_source(unfold_obsarray,target_hists_tuple[2],"unfold",target_hists_tuple[0]))
 
       write_all_hists(unfold_hists)
       list_dict_out += get_all_dicts(unfold_hists)
+      if config[args.method]["addsysbs"]:
+        #weight_sysbs_iter = [oneweight_sysbs[weight_index] for oneweight_sysbs in weights_sysbs if weight_index<len(oneweight_sysbs)  ]
+        #unfold_hists_sysbs = fill_hist_lists("MC_"+args.method+"_sys", obs1, obs2, bin_edges_gen,bin_edges_reco,config[args.method]["sim"],genWeight=weightname,from_root=False,weight_array=weight_sysbs_iter,store_mig=False,tag="_iter"+str(i),**df_config)
+        #histlist_dic_applyMCeff(unfold_hists_sysbs,args.eff_from_nominal,gen_inveff)
+        #histlist_dic_normalize_to_data(unfold_hists_sysbs,normalization_hist)
+        #write_all_hists(unfold_hists_sysbs)
+        #list_dict_out += get_all_dicts(unfold_hists_sysbs)
+
+
+        def process_bs(ibs):
+          with open(sysbs_name_list[ibs],'rb') as sysbs_file:
+            weight_sysbs = np.load(sysbs_file,allow_pickle=True)
+            if weight_index<len(weight_sysbs):
+              weight_sysbs_thisiter = weight_sysbs[weight_index]
+            else:
+              return None
+          unfold_hists_sysbs_i = fill_hist_lists("MC_"+args.method+"_sysbs_"+ibs_list[ibs], obs1, obs2, bin_edges_gen,bin_edges_reco,config[args.method]["sim"],genWeight=weightname,from_root=False,weight_array=weight_sysbs_thisiter,store_mig=False,tag="_iter"+str(i),**df_config)
+          histlist_dic_applyMCeff(unfold_hists_sysbs_i,args.eff_from_nominal,gen_inveff)
+          histlist_dic_normalize_to_data(unfold_hists_sysbs_i,normalization_hist)
+          write_all_hists(unfold_hists_sysbs_i)
+          return get_all_dicts(unfold_hists_sysbs_i)
+
+        with Pool() as pool:
+          for result in pool.map(process_bs,range(len(sysbs_name_list))):
+            if result is not None:
+              list_dict_out += result
+
+        #unfold_hists_sysbs_list = [fill_hist_lists("MC_"+args.method+"_sysbs_"+ibs_list[ibs], obs1, obs2, bin_edges_gen,bin_edges_reco,config[args.method]["sim"],genWeight=weightname,from_root=False,weight_array=weight_sysbs_iter[ibs],store_mig=False,tag="_iter"+str(i),**df_config) for ibs in range(len(weight_sysbs_iter))]
+
+        #for ibs in range(len(weight_sysbs_iter)):
+        #  histlist_dic_applyMCeff(unfold_hists_sysbs_list[ibs],args.eff_from_nominal,gen_inveff)
+        #  histlist_dic_normalize_to_data(unfold_hists_sysbs_list[ibs],normalization_hist)
+        #for ibs in range(len(weight_sysbs_iter)):
+        #  write_all_hists(unfold_hists_sysbs_list[ibs])
+        #  list_dict_out += get_all_dicts(unfold_hists_sysbs_list[ibs])
 
     chi2_unfold_target = Chi2Collections.merge(list_chi2_unfold_target)
     list_dict_out += fill_gof_histdata(chi2_unfold_target,**df_config)

@@ -215,6 +215,20 @@ def draw_array(value,error,bins,style,ax,color,legend):
       label = legend,
       ax = ax
     )
+  elif style == 'hatch':
+    error_up = np.append(value,value[-1]) + np.append(error,error[-1])
+    error_down = np.append(value,value[-1]) - np.append(error,error[-1])
+    ax.fill_between(
+      x = bins,
+      y1 = error_up,
+      y2 = error_down,
+      facecolor = "none",
+      edgecolor = color,
+      step = "post",
+      linewidth = 0,
+      hatch = "///",
+      label = legend
+    )
   else:
     print(f"style {style} not recognized")
 

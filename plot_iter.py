@@ -112,6 +112,7 @@ def get_histconfig_gof(df,color,legend,histtype_list):
       list_gof.append(HistConfig(histarray/histarray.nested_value[0][0],0,color,"hist",legend))
     else:
       list_gof.append(None)
+      list_gof.append(None)
 
   return Chi2Collection(*list_gof),KSCollection(*list_gof)
 
@@ -263,54 +264,67 @@ if __name__=="__main__":
           records_it = get_df_entries(df, **base_sel|iter_sel)
           it_color = result_settings.color
           it_color_unfold = result_settings.color_unfold
-          it_legend = result_settings.legend
+          it_legend = result_settings.legend_refold
           it_legend_unfold = result_settings.legend_unfold
           tag = result_settings.tag
           hcc_it = get_histconfigcollection(records_it,[it_color_unfold,it_color,it_color_unfold,it_color_unfold,None],["marker","filled","cross","cross",None],[it_legend_unfold,it_legend,it_legend_unfold+" Eff.",it_legend_unfold+" Acc.",it_legend_unfold+" Mig."])
+
+          if method in config['evaluate-sys-bootstrap']:
+            iter_sysbs_sel = {'datatype': config['workflow']+"_sys",
+                      'dataset': config['MC_name'],
+                      'iter': it}
+            records_it_sysbs = get_df_entries(df, **base_sel|iter_sysbs_sel)
+            it_sysbs_color = result_settings.color
+            it_sysbs_color_unfold = result_settings.color_unfold
+            it_sysbs_legend = result_settings.legend_refold+" sys."
+            it_sysbs_legend_unfold = result_settings.legend_unfold+" sys."
+            hcc_it_sysbs = get_histconfigcollection(records_it_sysbs,[it_sysbs_color_unfold,it_sysbs_color,it_sysbs_color_unfold,it_sysbs_color_unfold,None],["hatch","hatch","hatch","hatch",None],[it_sysbs_legend_unfold,it_sysbs_legend,it_sysbs_legend_unfold+" Eff.",it_sysbs_legend_unfold+" Acc.",it_sysbs_legend_unfold+" Mig."])
+          else:
+            hcc_it_sysbs = None
 
           pltLists = {}
           ratio = 'Refold / data' if config['workflow']=="unfold" else "Reweight / sys. var."
           pltLists[f"Refoldcompare_iter{it}"] = PlotConfig(
                                                            hcc_data.reco,
-                                                           [hcc_it.reco,hcc_MC.reco],
+                                                           [hcc_it.reco,hcc_it_sysbs.reco,hcc_MC.reco],
                                                            f'data_refold_{tag}_iter{it}',
                                                            ratio)
 
           ratio = 'Unfold / MC' if config['workflow']=="unfold" else "Reweight / MC"
           pltLists[f"Unfoldcompare_iter{it}"] = PlotConfig(
                                                            hcc_MC.gen,
-                                                           [hcc_it.gen],
+                                                           [hcc_it.gen,hcc_it_sysbs.gen],
                                                            f'MC_unfold_{tag}_iter{it}',
                                                            ratio )
 
           ratio = 'Unfold / Truth' if config['workflow']=="unfold" else "Reweight / sys. var."
           pltLists[f"Unfoldcomparepseudodata_iter{it}"] = PlotConfig(
                                                                      hcc_data.gen,
-                                                                     [hcc_it.gen,hcc_MC.gen],
+                                                                     [hcc_it.gen,hcc_it_sysbs.gen,hcc_MC.gen],
                                                                      f'pseudodata_truth_unfold_{tag}_iter{it}',
                                                                      ratio)
 
           ratio = 'Unfold / MC' if config['workflow']=="unfold" else "Reweight / MC"
           pltLists[f"Unfoldcompareeff_iter{it}"]= PlotConfig(
                                                               hcc_MC.eff,
-                                                              [hcc_it.eff],
+                                                              [hcc_it.eff,hcc_it_sysbs.eff],
                                                               f'MC_unfoldedeff_{tag}_iter{it}',
                                                               ratio )
 
           pltLists[f"Unfoldcompareacc_iter{it}"]= PlotConfig( hcc_MC.acc,
-                                                                [hcc_it.acc],
+                                                                [hcc_it.acc,hcc_it_sysbs.acc],
                                                                 f'MC_unfoldacc_{tag}_iter{it}',
                                                                 ratio )
 
           ratio = 'Unfold / Truth' if config['workflow']=="unfold" else "Reweight / sys. var"
           pltLists[f"Unfoldcomparepseudodataeff_iter{it}"]= PlotConfig(
                                                               hcc_data.eff,
-                                                              [hcc_it.eff, hcc_MC.eff],
+                                                              [hcc_it.eff,hcc_it_sysbs.eff, hcc_MC.eff],
                                                               f'pseudodatatruth_unfoldedeff_{tag}_iter{it}',
                                                               ratio )
 
           pltLists[f"Unfoldcomparepseudodataacc_iter{it}"]= PlotConfig( hcc_data.acc,
-                                                                [hcc_it.acc,hcc_MC.acc],
+                                                                [hcc_it.acc,hcc_it_sysbs.acc,hcc_MC.acc],
                                                                 f'pseudodatatruth_unfoldacc_{tag}_iter{it}',
                                                                 ratio )
           to_plot = [f'Refoldcompare_iter{it}', f'Unfoldcompare_iter{it}', f'Unfoldcompareeff_iter{it}', f'Unfoldcompareacc_iter{it}',f'Unfoldcomparepseudodata_iter{it}', f"Unfoldcomparepseudodataeff_iter{it}", f"Unfoldcomparepseudodataacc_iter{it}" ]
