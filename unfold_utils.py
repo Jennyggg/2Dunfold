@@ -16,7 +16,7 @@ from configs import HistDim
 from abc import ABC, abstractmethod
 from typing import Union
 from GOF.binned import *
-import catpy.catpy.test_stats as cts
+import catpy.test_stats as cts
 
 
 class CutType(Enum):
@@ -585,15 +585,18 @@ class HistList:
         if len(self.root_hists_name) != len(self.dim2.edges):
             raise ValueError('root_hists_name does not have the same length as bin_edges_dim2. Run fill_root_hists_name() first')
         self.root_hists = [ ROOT.TH1F(hist_name, hist_name, len(self.dim2.edges[ibin1]) - 1, np.array(self.dim2.edges[ibin1])) for ibin1, hist_name in enumerate(self.root_hists_name) ]
+
         if isinstance(files, list):
             f_list = [ np.load(str(file_one), allow_pickle=True) for file_one in files ]
             obs_arrays = {}
             for key in list(f_list[0].keys()):
                 if key != 'tracks' and key != 'charged':
                     obs_arrays[key] = np.concatenate([ f[key] for f in f_list ], axis=0)
-
-        else:
+        elif isinstance(files, str):
             obs_arrays = np.load(files)
+        elif isinstance(files, dict):
+            obs_arrays = files
+
         if weightarray is None:
             weightarray = np.ones(len(obs_arrays['reco_ntrk']))
         if genWeight != '':

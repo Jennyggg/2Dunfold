@@ -264,6 +264,7 @@ def load_events( source ):
     from_root = False
   elif '.npz' in source:
     events = np.load(source,allow_pickle=True)
+    events = { k:events[k] for k in list(events.keys()) }
     from_root = False
   else:
     f = uproot.open(source)
@@ -428,8 +429,9 @@ if __name__=="__main__":
 
     tree_data = None
     infile_data = get_input_file_from_config_info( config["inputfiledata"], obs2_name )
-    fin_refdata=ROOT.TFile(infile_data,"READ")
-    tree_refdata=fin_refdata.Get("ntuplizer/tree") if fin_refdata.Get("ntuplizer/tree") else fin_refdata.Get("tree")
+    tree_refdata, data_from_root = load_events( infile_data )
+    #fin_refdata=ROOT.TFile(infile_data,"READ")
+    #tree_refdata=fin_refdata.Get("ntuplizer/tree") if fin_refdata.Get("ntuplizer/tree") else fin_refdata.Get("tree")
     if config["pseudodata"]:
       if not pseudodata_NPZ:
         fin_data=ROOT.TFile(infile_pseudodata,"READ")
@@ -464,7 +466,7 @@ if __name__=="__main__":
     else:
       reco_data_tree = tree_data
       tag = ""
-    data_hists = fill_hist_lists("Data", obs1, obs2, None, bin_edges_reco, reco_data_tree, tag=tag, reco_only=True,**df_config)
+    data_hists = fill_hist_lists("Data", obs1, obs2, None, bin_edges_reco, reco_data_tree, tag=tag, reco_only=True, from_root=data_from_root,**df_config)
     chi2_mc_data = Chi2Collections.from_source(mc_hists,data_hists,"MC","data")
     data_events,data_from_root = load_events(infile_data)
     data_obsarray = load_obs_array( data_events, data_from_root, [obs2])
